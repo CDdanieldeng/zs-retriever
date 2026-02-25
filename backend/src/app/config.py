@@ -158,6 +158,20 @@ class Settings(BaseSettings):
         default="app.services.providers.vector_store_default.DefaultVectorStoreAdapter",
     )
 
+    # Logging
+    log_level: str = Field(
+        default="INFO",
+        description="Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL",
+    )
+    log_format: Literal["text", "json"] = Field(
+        default="text",
+        description="Log format: text (human-readable) or json (for log aggregators)",
+    )
+    log_file_path: Path | None = Field(
+        default=None,
+        description="Optional file path to write logs (e.g. logs/app.log)",
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

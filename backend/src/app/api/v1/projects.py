@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.config import get_settings
+from app.core.logging import get_logger
 from app.core.tracing import set_trace_id
 from app.db.models import File as FileModel, Project
 from app.db.session import get_db
@@ -19,6 +20,7 @@ from app.schemas.search import (
 from app.services.retrieval.search import get_parent_with_children, search
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+logger = get_logger("app.api.v1.projects")
 
 
 @router.post("/{project_id}/files/upload", response_model=UploadResponse)
@@ -28,6 +30,7 @@ def upload_file(
 ):
     """Upload file and optionally trigger immediate ingestion."""
     set_trace_id()
+    logger.info("Upload request: project=%s filename=%s", project_id, file.filename)
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename")
     ext = Path(file.filename).suffix.lower()
@@ -69,6 +72,7 @@ def upload_file(
         db.commit()
     finally:
         db.close()
+    logger.info("Uploaded file_id=%s for project=%s", file_id, project_id)
     return UploadResponse(file_id=file_id, filename=file.filename, project_id=project_id)
 
 
@@ -79,15 +83,20 @@ def search_endpoint(
 ):
     """Recall + Rerank search."""
     set_trace_id()
-    result = search(
-        project_id=project_id,
-        query=body.query,
-        index_version=body.index_version,
-        recall_top_k=body.recall_top_k,
-        rerank_top_n=body.rerank_top_n,
-        filters=body.filters,
-        debug=body.debug,
-    )
+    logger.info("Search: project=%s query=%s", project_id, (body.query[:50] + "..." if len(body.query) > 50 else body.query))
+    try:
+        result = search(
+            project_id=project_id,
+            query=body.query,
+            index_version=body.index_version,
+            recall_top_k=body.recall_top_k,
+            rerank_top_n=body.rerank_top_n,
+            filters=body.filters,
+            debug=body.debug,
+        )
+    except Exception as e:
+        logger.exception("Search failed for project=%s: %s", project_id, e)
+        raise
     resp = SearchResponse(
         trace_id=result.trace_id,
         recall=[RecallHitSchema(**r.__dict__) for r in result.recall],

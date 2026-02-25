@@ -6,7 +6,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.logging import get_logger
 from app.core.tracing import get_trace_id
+
+logger = get_logger("app.services.retrieval.search")
 from app.db.models import Chunk, Parent, Project
 from app.db.session import get_db
 
@@ -75,6 +78,7 @@ def search(
             proj = db.query(Project).filter(Project.project_id == project_id).first()
             index_version = proj.active_index_version if proj else None
         if not index_version:
+            logger.warning("No index version for project=%s", project_id)
             return SearchResult(
                 trace_id=trace_id,
                 recall=[],

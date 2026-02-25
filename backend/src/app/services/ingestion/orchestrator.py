@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
+from app.core.logging import get_logger
 from app.db.models import Chunk, File, IngestionLog, Parent, Project
 from app.db.session import get_db
 from app.services.ingestion.image_pipeline import find_parent_for_image, process_image_blocks
@@ -14,6 +15,8 @@ from app.services.parsing.base import ImageBlock, SourceType
 from app.services.parsing.docx_parser import DocxParser
 from app.services.parsing.pdf_parser import PdfParser
 from app.services.parsing.pptx_parser import PptxParser
+
+logger = get_logger("app.services.ingestion.orchestrator")
 
 
 @dataclass
@@ -88,6 +91,7 @@ def ingest_file(
             .first()
         )
         if existing:
+            logger.debug("Skipping duplicate doc_hash=%s for project=%s version=%s", doc_hash[:16], project_id, index_version)
             return IngestionResult(skipped=True, file_id=existing.file_id)
 
         # Ensure project exists
@@ -208,12 +212,21 @@ def ingest_file(
             )
         )
         db.commit()
+        logger.info(
+            "Ingested %s: %d parents, %d chunks (project=%s, version=%s)",
+            filename,
+            len(parents),
+            len(all_chunks),
+            project_id,
+            index_version,
+        )
         return IngestionResult(
             file_id=file_id,
             parents_created=len(parents),
             chunks_created=len(all_chunks),
         )
     except Exception as e:
+        logger.exception("Ingestion failed for %s (project=%s): %s", filename, project_id, e)
         db.rollback()
         return IngestionResult(file_id=file_id, error=str(e))
     finally:

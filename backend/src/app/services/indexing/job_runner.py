@@ -7,7 +7,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.core.logging import get_logger
 from app.db.models import File, Job
+
+logger = get_logger("app.services.indexing.job_runner")
 from app.db.session import get_db
 from app.services.ingestion.orchestrator import ingest_file
 
@@ -23,7 +26,8 @@ def _run_index_job(job_id: str, project_id: str, file_ids: list[str] | None, ind
             {"status": "running", "metrics": {"started_at": time.time()}}
         )
         db.commit()
-    except Exception:
+    except Exception as e:
+        logger.exception("Failed to update job %s to running: %s", job_id, e)
         db.rollback()
         db.close()
         return
@@ -32,6 +36,13 @@ def _run_index_job(job_id: str, project_id: str, file_ids: list[str] | None, ind
     files_dir = settings.files_storage_path
     files_dir.mkdir(parents=True, exist_ok=True)
 
+    logger.info(
+        "Starting index job %s for project %s (version=%s, file_ids=%s)",
+        job_id,
+        project_id,
+        index_version,
+        file_ids,
+    )
     metrics = {"files_processed": 0, "chunks_created": 0, "skipped_duplicates": 0}
     start = time.time()
 
@@ -47,6 +58,7 @@ def _run_index_job(job_id: str, project_id: str, file_ids: list[str] | None, ind
         for f in files:
             path = files_dir / f.file_id
             if not path.exists():
+                logger.warning("File not found on disk for job %s: %s (%s)", job_id, f.file_id, f.filename)
                 continue
             with open(path, "rb") as fp:
                 content = fp.read()
@@ -64,6 +76,12 @@ def _run_index_job(job_id: str, project_id: str, file_ids: list[str] | None, ind
                 metrics["files_processed"] += 1
                 metrics["chunks_created"] += result.chunks_created
             if result.error:
+                logger.error(
+                    "Ingestion failed for job %s file %s: %s",
+                    job_id,
+                    f.file_id,
+                    result.error,
+                )
                 db.query(Job).filter(Job.job_id == job_id).update(
                     {"status": "failed", "error_message": result.error}
                 )
@@ -71,6 +89,13 @@ def _run_index_job(job_id: str, project_id: str, file_ids: list[str] | None, ind
                 return
 
         metrics["duration_ms"] = int((time.time() - start) * 1000)
+        logger.info(
+            "Index job %s completed: %d files, %d chunks in %dms",
+            job_id,
+            metrics["files_processed"],
+            metrics["chunks_created"],
+            metrics["duration_ms"],
+        )
         db.query(Job).filter(Job.job_id == job_id).update(
             {"status": "completed", "metrics": metrics}
         )
@@ -81,6 +106,7 @@ def _run_index_job(job_id: str, project_id: str, file_ids: list[str] | None, ind
         )
         db.commit()
     except Exception as e:
+        logger.exception("Index job %s failed: %s", job_id, e)
         db.query(Job).filter(Job.job_id == job_id).update(
             {"status": "failed", "error_message": str(e)}
         )
