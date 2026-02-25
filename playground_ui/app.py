@@ -20,6 +20,22 @@ st.markdown("""
 4. **查看上下文** → 按需获取父级块及其子块，用于展开完整上下文
 """)
 
+st.subheader("🔧 模型配置 (Embedding / Recall / Rerank)")
+
+st.markdown("""
+通过 `RETRIEVER_PROVIDER_MODE` 可快速切换 **api** 或 **local** 模式，两种模式使用的模型如下：
+
+| 组件 | Local 模式 | API 模式 |
+|------|------------|----------|
+| **Embedding** | `Qwen/Qwen3-Embedding-0.6B` (HuggingFace) | `text-embedding-v4` (Qwen DashScope) |
+| **Recall** | 与 Embedding 相同，用向量做相似度检索 | 与 Embedding 相同 |
+| **Rerank** | `BAAI/bge-reranker-large` (CrossEncoder) | `qwen3-rerank` (Qwen DashScope) |
+
+**说明：**
+- **Recall** 使用 Embedding 模型生成的向量进行向量相似度检索，因此与 Embedding 共用同一模型
+- 可通过 `.env` 覆盖具体模型，如 `RETRIEVER_EMBEDDING_QWEN_API_MODEL`、`RETRIEVER_RERANK_QWEN_API_MODEL` 等
+""")
+
 st.subheader("API 调用方式")
 
 st.markdown("""
