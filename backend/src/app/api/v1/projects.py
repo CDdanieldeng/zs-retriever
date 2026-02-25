@@ -42,38 +42,45 @@ def upload_file(
     elif ext == ".docx":
         source_type = "docx"
     if not source_type:
+        logger.warning("Upload rejected: unsupported format ext=%s project=%s filename=%s", ext, project_id, file.filename)
         raise HTTPException(
             status_code=400,
             detail="Unsupported format. Use pdf, pptx, or docx.",
         )
-    content = file.file.read()
-    file_id = str(uuid.uuid4())
-    settings = get_settings()
-    files_dir = settings.files_storage_path
-    files_dir.mkdir(parents=True, exist_ok=True)
-    path = files_dir / file_id
-    path.write_bytes(content)
-    db = get_db()
     try:
-        proj = db.query(Project).filter(Project.project_id == project_id).first()
-        if not proj:
-            db.add(Project(project_id=project_id))
-        import hashlib
-        doc_hash = hashlib.sha256(content).hexdigest()
-        db.add(
-            FileModel(
-                file_id=file_id,
-                project_id=project_id,
-                filename=file.filename,
-                doc_hash=doc_hash,
-                source_type=source_type,
+        content = file.file.read()
+        file_id = str(uuid.uuid4())
+        settings = get_settings()
+        files_dir = settings.files_storage_path
+        files_dir.mkdir(parents=True, exist_ok=True)
+        path = files_dir / file_id
+        path.write_bytes(content)
+        db = get_db()
+        try:
+            proj = db.query(Project).filter(Project.project_id == project_id).first()
+            if not proj:
+                db.add(Project(project_id=project_id))
+            import hashlib
+            doc_hash = hashlib.sha256(content).hexdigest()
+            db.add(
+                FileModel(
+                    file_id=file_id,
+                    project_id=project_id,
+                    filename=file.filename,
+                    doc_hash=doc_hash,
+                    source_type=source_type,
+                )
             )
-        )
-        db.commit()
-    finally:
-        db.close()
-    logger.info("Uploaded file_id=%s for project=%s", file_id, project_id)
-    return UploadResponse(file_id=file_id, filename=file.filename, project_id=project_id)
+            db.commit()
+        finally:
+            db.close()
+        logger.info("Uploaded file_id=%s for project=%s filename=%s size=%d", file_id, project_id, file.filename, len(content))
+        return UploadResponse(file_id=file_id, filename=file.filename, project_id=project_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Upload failed project=%s filename=%s: %s", project_id, file.filename, e)
+        raise
 
 
 @router.post("/{project_id}/search", response_model=SearchResponse)
